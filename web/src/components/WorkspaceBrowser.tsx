@@ -229,14 +229,14 @@ export function WorkspaceBrowser(props: {
         void loadDirectory(selectedRoot)
     }, [machineId, selectedRoot, currentPath, loadDirectory])
 
-    // 切换机器时重置浏览状态，并立即对齐到新机器的第一个 workspace root。
-    // 否则 selectedRoot 可能被清空后跳过自动加载，页面会停在空态。
+    // 切换机器时才重置浏览状态；workspaceRoots 的刷新由上面的 effect
+    // 只做 root 有效性校正，避免 metadata 更新时清空用户当前浏览位置。
     useEffect(() => {
         setSelectedRoot(workspaceRoots[0] ?? null)
         setCurrentPath(null)
         setEntries([])
         setError(null)
-    }, [machineId, workspaceRoots])
+    }, [machineId])
 
     const handleEntryClick = useCallback((entry: MachineDirectoryEntry) => {
         if (entry.type !== 'directory' || !currentPath) return
