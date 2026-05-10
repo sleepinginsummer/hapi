@@ -184,7 +184,10 @@ export function WorkspaceBrowser(props: {
         () => machineId ? machines.find(m => m.id === machineId) ?? null : null,
         [machineId, machines]
     )
-    const workspaceRoots = selectedMachine?.metadata?.workspaceRoots ?? []
+    const workspaceRoots = useMemo(
+        () => selectedMachine?.metadata?.workspaceRoots ?? [],
+        [selectedMachine?.metadata?.workspaceRoots]
+    )
 
     const loadDirectory = useCallback(async (path: string) => {
         if (!machineId) return
