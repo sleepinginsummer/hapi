@@ -1100,6 +1100,11 @@ export function buildCliArgs(
     }
   }
   args.push('--hapi-starting-mode', 'remote', '--started-by', 'runner');
+  if (options.existingSessionId) {
+    args.push('--existing-session-id', options.existingSessionId);
+  } else if (options.sessionId) {
+    args.push('--existing-session-id', options.sessionId);
+  }
   if (options.model) {
     args.push('--model', options.model);
   }
