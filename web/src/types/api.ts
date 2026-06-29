@@ -191,6 +191,11 @@ export type CodexLocalSessionsResponse = {
     success: true
     sessions: CodexLocalSessionSummary[]
     machineId?: string
+} | {
+    success: false
+    error: string
+    sessions: []
+    machineId?: string
 }
 
 
