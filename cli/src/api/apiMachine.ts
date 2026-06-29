@@ -222,9 +222,15 @@ export class ApiMachineClient {
                 const requestedIds = Array.isArray(params?.sessionIds)
                     ? new Set(params.sessionIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0))
                     : null
-                const sessions = requestedIds
+                const allSessions = requestedIds
                     ? listLocalCodexSessionsWithMessages().filter((session) => requestedIds.has(session.id))
                     : listLocalCodexSessionSummaries()
+                const sessions = []
+                for (const session of allSessions) {
+                    if (await this.isCodexSessionWithinWorkspaceRoots(session)) {
+                        sessions.push(session)
+                    }
+                }
                 return { success: true, sessions }
             }
         )
@@ -236,9 +242,19 @@ export class ApiMachineClient {
                 if (!sessionId) {
                     return { success: false, error: 'sessionId is required' }
                 }
-                return archiveLocalCodexSession(sessionId)
+                return await archiveLocalCodexSession(sessionId, {
+                    canArchive: (session) => this.isCodexSessionWithinWorkspaceRoots(session)
+                })
             }
         )
+    }
+
+    private async isCodexSessionWithinWorkspaceRoots(session: { cwd?: string | null }): Promise<boolean> {
+        if (!this.normalizedWorkspaceRoots?.length) return true
+        const cwd = session.cwd?.trim()
+        if (!cwd) return false
+        const resolvedCwd = await this.resolveForWorkspaceCheck(cwd)
+        return this.isWithinWorkspaceRoots(resolvedCwd)
     }
 
     private isWithinWorkspaceRoots(absolutePath: string): boolean {
