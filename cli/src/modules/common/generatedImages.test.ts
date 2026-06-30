@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'fs'
+import { existsSync, mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { clearGeneratedImages, detectImageMimeType, getGeneratedImage, registerGeneratedImage } from './generatedImages'
@@ -86,6 +86,30 @@ describe('generatedImages', () => {
             })
             clearGeneratedImages()
             expect(getGeneratedImage('persisted-image')?.content.toString()).toBe('persisted')
+        } finally {
+            if (prev === undefined) delete process.env.CODEX_HOME
+            else process.env.CODEX_HOME = prev
+            rmSync(dir, { recursive: true, force: true })
+        }
+    })
+
+    it('evicts old persisted images across memory cache clears', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'hapi-generated-images-'))
+        const prev = process.env.CODEX_HOME
+        process.env.CODEX_HOME = dir
+        try {
+            for (let i = 0; i < 101; i += 1) {
+                registerGeneratedImage({
+                    id: `persisted-${i}`,
+                    path: `/tmp/persisted-${i}.png`,
+                    mimeType: 'image/png',
+                    bytes: Buffer.from(`persisted-${i}`)
+                })
+                clearGeneratedImages()
+            }
+
+            expect(existsSync(join(dir, 'generated-images', 'persisted-0.bin'))).toBe(false)
+            expect(existsSync(join(dir, 'generated-images', 'persisted-100.bin'))).toBe(true)
         } finally {
             if (prev === undefined) delete process.env.CODEX_HOME
             else process.env.CODEX_HOME = prev

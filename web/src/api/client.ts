@@ -330,6 +330,16 @@ export class ApiClient {
     }
 
     async getGeneratedImageBlob(sessionId: string, imageId: string, attempt: number = 0, overrideToken?: string | null): Promise<Blob> {
+        return await this.fetchAuthedBlob(`/api/sessions/${encodeURIComponent(sessionId)}/generated-images/${encodeURIComponent(imageId)}`, attempt, overrideToken)
+    }
+
+    async getSessionLocalImageBlob(sessionId: string, path: string, attempt: number = 0, overrideToken?: string | null): Promise<Blob> {
+        const params = new URLSearchParams()
+        params.set('path', path)
+        return await this.fetchAuthedBlob(`/api/sessions/${encodeURIComponent(sessionId)}/local-image?${params.toString()}`, attempt, overrideToken)
+    }
+
+    private async fetchAuthedBlob(path: string, attempt: number = 0, overrideToken?: string | null): Promise<Blob> {
         const headers = new Headers()
         const liveToken = this.getToken ? this.getToken() : null
         const authToken = overrideToken !== undefined
@@ -338,14 +348,14 @@ export class ApiClient {
         if (authToken) {
             headers.set('authorization', `Bearer ${authToken}`)
         }
-        const res = await fetch(this.buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}/generated-images/${encodeURIComponent(imageId)}`), {
+        const res = await fetch(this.buildUrl(path), {
             headers
         })
         if (res.status === 401 && attempt === 0 && this.onUnauthorized) {
             const refreshed = await this.onUnauthorized()
             if (refreshed) {
                 this.token = refreshed
-                return await this.getGeneratedImageBlob(sessionId, imageId, attempt + 1, refreshed)
+                return await this.fetchAuthedBlob(path, attempt + 1, refreshed)
             }
         }
         if (!res.ok) {

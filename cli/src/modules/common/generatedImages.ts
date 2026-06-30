@@ -1,5 +1,5 @@
 import { basename, join } from 'path'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 
 export type GeneratedImageMetadata = {
@@ -13,7 +13,6 @@ export type GeneratedImageMetadata = {
 const MAX_GENERATED_IMAGE_BYTES = 25 * 1024 * 1024
 const MAX_GENERATED_IMAGE_TOTAL_BYTES = 100 * 1024 * 1024
 const MAX_GENERATED_IMAGE_COUNT = 100
-const GENERATED_IMAGE_CACHE_DIR = join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'generated-images')
 
 const generatedImages = new Map<string, GeneratedImageMetadata>()
 let generatedImageBytes = 0
@@ -98,12 +97,7 @@ function evictOldGeneratedImages(): void {
             generatedImageBytes -= oldest.content.byteLength
         }
         generatedImages.delete(oldestId)
-        try {
-            rmSync(join(GENERATED_IMAGE_CACHE_DIR, `${oldestId}.bin`), { force: true })
-            rmSync(join(GENERATED_IMAGE_CACHE_DIR, `${oldestId}.json`), { force: true })
-        } catch {
-            // ponytail: cache cleanup best-effort; stale files only waste disk.
-        }
+        removePersistedGeneratedImage(getGeneratedImageCacheDir(), oldestId)
     }
 }
 
@@ -120,14 +114,16 @@ export function clearGeneratedImages(): void {
 
 function persistGeneratedImage(image: GeneratedImageMetadata): void {
     try {
-        mkdirSync(GENERATED_IMAGE_CACHE_DIR, { recursive: true })
-        writeFileSync(join(GENERATED_IMAGE_CACHE_DIR, `${image.id}.bin`), image.content)
-        writeFileSync(join(GENERATED_IMAGE_CACHE_DIR, `${image.id}.json`), JSON.stringify({
+        const cacheDir = getGeneratedImageCacheDir()
+        mkdirSync(cacheDir, { recursive: true })
+        writeFileSync(join(cacheDir, `${image.id}.bin`), image.content)
+        writeFileSync(join(cacheDir, `${image.id}.json`), JSON.stringify({
             id: image.id,
             fileName: image.fileName,
             mimeType: image.mimeType,
             createdAt: image.createdAt
         }))
+        evictPersistedGeneratedImages(cacheDir)
     } catch {
         // ponytail: cache only; if disk write fails, fall back to in-memory behavior.
     }
@@ -135,8 +131,9 @@ function persistGeneratedImage(image: GeneratedImageMetadata): void {
 
 function loadPersistedGeneratedImage(id: string): GeneratedImageMetadata | null {
     try {
-        const content = readFileSync(join(GENERATED_IMAGE_CACHE_DIR, `${id}.bin`))
-        const meta = JSON.parse(readFileSync(join(GENERATED_IMAGE_CACHE_DIR, `${id}.json`), 'utf8')) as { fileName?: string; mimeType?: string; createdAt?: number }
+        const cacheDir = getGeneratedImageCacheDir()
+        const content = readFileSync(join(cacheDir, `${id}.bin`))
+        const meta = JSON.parse(readFileSync(join(cacheDir, `${id}.json`), 'utf8')) as { fileName?: string; mimeType?: string; createdAt?: number }
         return {
             id,
             fileName: meta.fileName ?? `${id}.png`,
@@ -146,5 +143,43 @@ function loadPersistedGeneratedImage(id: string): GeneratedImageMetadata | null 
         }
     } catch {
         return null
+    }
+}
+
+function getGeneratedImageCacheDir(): string {
+    return join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'generated-images')
+}
+
+function removePersistedGeneratedImage(cacheDir: string, id: string): void {
+    try {
+        rmSync(join(cacheDir, `${id}.bin`), { force: true })
+        rmSync(join(cacheDir, `${id}.json`), { force: true })
+    } catch {
+        // ponytail: cache cleanup best-effort; stale files only waste disk.
+    }
+}
+
+function evictPersistedGeneratedImages(cacheDir: string): void {
+    const entries = readdirSync(cacheDir)
+        .filter((name) => name.endsWith('.bin'))
+        .map((name) => {
+            const id = name.slice(0, -4)
+            const metaPath = join(cacheDir, `${id}.json`)
+            let createdAt = 0
+            try {
+                createdAt = JSON.parse(readFileSync(metaPath, 'utf8')).createdAt ?? 0
+            } catch {
+                createdAt = statSync(join(cacheDir, name)).mtimeMs
+            }
+            return { id, size: statSync(join(cacheDir, name)).size, createdAt }
+        })
+        .sort((a, b) => a.createdAt - b.createdAt)
+
+    let totalBytes = entries.reduce((sum, entry) => sum + entry.size, 0)
+    while (entries.length > MAX_GENERATED_IMAGE_COUNT || totalBytes > MAX_GENERATED_IMAGE_TOTAL_BYTES) {
+        const oldest = entries.shift()
+        if (!oldest) break
+        totalBytes -= oldest.size
+        removePersistedGeneratedImage(cacheDir, oldest.id)
     }
 }
