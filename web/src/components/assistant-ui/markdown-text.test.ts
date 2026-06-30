@@ -10,6 +10,7 @@ import {
     MARKDOWN_PLUGINS,
     MARKDOWN_PLUGINS_WITH_BREAKS,
     MARKDOWN_REHYPE_PLUGINS,
+    normalizeLocalImagePath,
 } from '@/components/assistant-ui/markdown-text'
 
 describe('MARKDOWN_PLUGINS integration', () => {
@@ -71,5 +72,18 @@ describe('MARKDOWN_PLUGINS — currency prose vs KaTeX', () => {
         const md = "Before\n\n$$\nE = mc^2\n$$\n\nAfter"
         const html = render(md)
         expect(html).toContain('class="katex"')
+    })
+})
+
+describe('normalizeLocalImagePath', () => {
+    it('accepts POSIX absolute image paths and strips file URLs', () => {
+        expect(normalizeLocalImagePath('/tmp/project/out.png')).toBe('/tmp/project/out.png')
+        expect(normalizeLocalImagePath('/home/user/project/out.webp')).toBe('/home/user/project/out.webp')
+        expect(normalizeLocalImagePath('file:///tmp/project/out.png')).toBe('/tmp/project/out.png')
+    })
+
+    it('rejects relative and non-image paths', () => {
+        expect(normalizeLocalImagePath('tmp/project/out.png')).toBeNull()
+        expect(normalizeLocalImagePath('/tmp/project/out.txt')).toBeNull()
     })
 })

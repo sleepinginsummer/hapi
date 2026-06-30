@@ -652,9 +652,9 @@ function Em(props: ComponentPropsWithoutRef<'em'>) {
     return <em {...props} className={cn('aui-md-em italic', props.className)} />
 }
 
-const LOCAL_IMAGE_PATH_PATTERN = /^(?:file:\/\/\/|\/Users\/|\/Volumes\/|[A-Za-z]:[\\/]).+\.(?:png|jpe?g|gif|webp|avif|bmp|svg)$/i
+const LOCAL_IMAGE_PATH_PATTERN = /^(?:file:\/\/\/|\/|[A-Za-z]:[\\/]).+\.(?:png|jpe?g|gif|webp|avif|bmp|svg)$/i
 
-function normalizeLocalImagePath(src: string | undefined): string | null {
+export function normalizeLocalImagePath(src: string | undefined): string | null {
     if (!src || !LOCAL_IMAGE_PATH_PATTERN.test(src)) return null
     return src.startsWith('file://') ? decodeURI(src.slice('file://'.length)) : src
 }
