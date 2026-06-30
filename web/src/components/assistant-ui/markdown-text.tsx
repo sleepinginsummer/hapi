@@ -656,7 +656,12 @@ const LOCAL_IMAGE_PATH_PATTERN = /^(?:file:\/\/\/|\/|[A-Za-z]:[\\/]).+\.(?:png|j
 
 export function normalizeLocalImagePath(src: string | undefined): string | null {
     if (!src || !LOCAL_IMAGE_PATH_PATTERN.test(src)) return null
-    return src.startsWith('file://') ? decodeURI(src.slice('file://'.length)) : src
+    if (!src.startsWith('file://')) return src
+    try {
+        return decodeURI(src.slice('file://'.length))
+    } catch {
+        return null
+    }
 }
 
 function Image(props: ComponentPropsWithoutRef<'img'>) {
