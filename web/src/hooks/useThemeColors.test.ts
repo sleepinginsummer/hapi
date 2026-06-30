@@ -2,7 +2,6 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
     applyThemeColors,
-    disposeThemeColors,
     initializeThemeColors,
     THEME_COLOR_KEYS,
     useThemeColors,
@@ -20,7 +19,6 @@ describe('useThemeColors', () => {
     })
 
     afterEach(() => {
-        disposeThemeColors()
         vi.restoreAllMocks()
     })
 
