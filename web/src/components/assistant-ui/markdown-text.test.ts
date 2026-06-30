@@ -86,4 +86,8 @@ describe('normalizeLocalImagePath', () => {
         expect(normalizeLocalImagePath('tmp/project/out.png')).toBeNull()
         expect(normalizeLocalImagePath('/tmp/project/out.txt')).toBeNull()
     })
+
+    it('rejects malformed file URIs instead of throwing during render', () => {
+        expect(normalizeLocalImagePath('file:///%E0%A4%A.png')).toBeNull()
+    })
 })
