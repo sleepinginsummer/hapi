@@ -272,12 +272,12 @@ export function getThemeColorPickerValue(scheme: ThemeScheme, id: ThemeColorKeyI
     return override ?? DEFAULT_HEX[scheme][id]
 }
 
-export function initializeThemeColors(): () => void {
+export function initializeThemeColors(): (() => void) | void {
     if (!isBrowser()) return
 
     applyThemeColors()
 
-    if (initialized) return
+    if (initialized) return themeColorsCleanup ?? undefined
     initialized = true
 
     const onStorage = (event: StorageEvent) => {
