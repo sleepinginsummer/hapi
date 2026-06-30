@@ -975,6 +975,9 @@ function buildImportedSessionMetadata(
     const machineId = typeof existingMetadata?.machineId === 'string'
         ? existingMetadata.machineId
         : resolvedMachineId
+    const currentCodexSessionId = typeof existingMetadata?.codexSessionId === 'string'
+        ? existingMetadata.codexSessionId
+        : data.id
 
     return {
         ...(existingMetadata ?? {}),
@@ -989,7 +992,7 @@ function buildImportedSessionMetadata(
             }
             : existingMetadata?.summary,
         flavor: 'codex',
-        codexSessionId: data.id,
+        codexSessionId: currentCodexSessionId,
         codexSourceSessionId: typeof existingMetadata?.codexSourceSessionId === 'string'
             ? existingMetadata.codexSourceSessionId
             : data.id,
