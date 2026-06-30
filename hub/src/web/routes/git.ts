@@ -17,6 +17,8 @@ const filePathSchema = z.object({
     path: z.string().min(1)
 })
 
+const MAX_LOCAL_IMAGE_BYTES = 25 * 1024 * 1024
+
 const generatedImageSchema = z.object({
     imageId: z.string().min(1)
 })
@@ -178,7 +180,7 @@ export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<We
         const mimeType = imageMimeTypeForPath(parsed.data.path)
         if (!mimeType) return c.json({ success: false, error: 'Unsupported image type' }, 400)
 
-        const result = await runRpc(() => engine.readSessionFile(sessionResult.sessionId, parsed.data.path))
+        const result = await runRpc(() => engine.readSessionFile(sessionResult.sessionId, parsed.data.path, { maxBytes: MAX_LOCAL_IMAGE_BYTES }))
         if (!result.success || !result.content) {
             return c.json({ success: false, error: result.error ?? 'Image not found' }, 404)
         }
