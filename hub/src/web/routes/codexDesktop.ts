@@ -1624,6 +1624,7 @@ function importSingleCodexSession(options: {
     model?: string | null
     modelReasoningEffort?: string | null
     yolo?: boolean
+    machineId?: string | null
 }): ScriptLaunchResponse {
     const summary = options.localSessionsById.get(options.codexSessionId)
     if (!summary) {
@@ -1667,7 +1668,7 @@ function importSingleCodexSession(options: {
         const metadata = buildImportedSessionMetadata(
             transcript,
             asRecord(existingStored?.metadata),
-            resolveImportMachineId(transcript.cwd, options.namespace, engine),
+            options.machineId ?? resolveImportMachineId(transcript.cwd, options.namespace, engine) ?? undefined,
             options.yolo ? 'yolo' : undefined
         )
 
@@ -1770,6 +1771,7 @@ export async function importSelectedCodexSessions(options: {
     model?: string | null
     modelReasoningEffort?: string | null
     yolo?: boolean
+    machineId?: string | null
 }): Promise<ScriptLaunchResponse> {
     const codexSessionIds = options.codexSessionIds
     if (codexSessionIds.length === 0) {
@@ -1787,7 +1789,8 @@ export async function importSelectedCodexSessions(options: {
             getSyncEngine: options.getSyncEngine,
             model: options.model,
             modelReasoningEffort: options.modelReasoningEffort,
-            yolo: options.yolo
+            yolo: options.yolo,
+            machineId: options.machineId
         })
         results.push(result)
 
@@ -1922,6 +1925,7 @@ export function createCodexDesktopRoutes(options: {
             namespace: c.get('namespace'),
             getSyncEngine: options.getSyncEngine,
             localSessions: remote.sessions,
+            machineId: remote.machineId ?? null,
             model: parsed.model,
             modelReasoningEffort: parsed.modelReasoningEffort,
             yolo: parsed.yolo
