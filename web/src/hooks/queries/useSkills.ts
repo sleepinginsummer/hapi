@@ -1,10 +1,27 @@
 import { useQuery } from '@tanstack/react-query'
 import { useCallback, useMemo } from 'react'
 import type { ApiClient } from '@/api/client'
-import type { SkillSummary } from '@/types/api'
+import type { SkillSummary, SkillsResponse } from '@/types/api'
 import type { Suggestion } from '@/hooks/useActiveSuggestions'
 import { queryKeys } from '@/lib/query-keys'
 import { getRecentSkills } from '@/lib/recent-skills'
+
+export function shouldRetrySkillsQuery(failureCount: number): boolean {
+    return failureCount < 3
+}
+
+const MAX_SKILLS_DISCOVERY_POLLS = 10
+
+export function getSkillsRefetchInterval(
+    enabled: boolean,
+    data: SkillsResponse | undefined,
+    pollCount: number
+): 1000 | false {
+    if (!enabled || pollCount >= MAX_SKILLS_DISCOVERY_POLLS) {
+        return false
+    }
+    return data?.success === true ? false : 1000
+}
 
 function levenshteinDistance(a: string, b: string): number {
     if (a.length === 0) return b.length
@@ -32,6 +49,7 @@ export function useSkills(
     getSuggestions: (query: string) => Promise<Suggestion[]>
 } {
     const resolvedSessionId = sessionId ?? 'unknown'
+    const enabled = Boolean(api && sessionId)
 
     const query = useQuery({
         queryKey: queryKeys.skills(resolvedSessionId),
@@ -41,10 +59,16 @@ export function useSkills(
             }
             return await api.getSkills(sessionId)
         },
-        enabled: Boolean(api && sessionId),
+        enabled,
         staleTime: Infinity,
         gcTime: 30 * 60 * 1000,
-        retry: false,
+        // 新会话刚创建时 CLI RPC handler 可能尚未注册，需要在首次成功前短暂重试。
+        retry: (failureCount) => shouldRetrySkillsQuery(failureCount),
+        refetchInterval: (query) => getSkillsRefetchInterval(
+            enabled,
+            query.state.data as SkillsResponse | undefined,
+            query.state.dataUpdateCount + query.state.errorUpdateCount
+        ),
     })
 
     const skills = useMemo(() => {

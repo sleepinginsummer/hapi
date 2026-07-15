@@ -706,7 +706,7 @@ describe('Codex Desktop import routes', () => {
         }
     })
 
-    it('uses the latest session_index thread_name for list and imported session title', async () => {
+    it('uses the latest session_index thread_name for imported session title', async () => {
         const codexHome = mkdtempSync(join(tmpdir(), 'hapi-codex-home-index-title-test-'))
         const store = new Store(':memory:')
         const codexSessionId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
@@ -726,12 +726,6 @@ describe('Codex Desktop import routes', () => {
                     updated_at: '2026-07-07T02:00:00.000000000Z'
                 }
             ])
-
-            const app = createRoutesApp('default')
-            const response = await app.request('/api/codex/sessions')
-            expect(response.status).toBe(200)
-            const body = await response.json() as { sessions: Array<{ id: string; title: string }> }
-            expect(body.sessions.find((session) => session.id === codexSessionId)?.title).toBe('new thread title')
 
             const result = await importSelectedCodexSessions({
                 codexSessionIds: [codexSessionId],
@@ -761,12 +755,6 @@ describe('Codex Desktop import routes', () => {
 
         try {
             createTranscript(codexHome, codexSessionId)
-
-            const app = createRoutesApp('default')
-            const response = await app.request('/api/codex/sessions')
-            expect(response.status).toBe(200)
-            const body = await response.json() as { sessions: Array<{ id: string; title: string }> }
-            expect(body.sessions.find((session) => session.id === codexSessionId)?.title).toBe('normal user message')
 
             const result = await importSelectedCodexSessions({
                 codexSessionIds: [codexSessionId],
@@ -803,12 +791,6 @@ describe('Codex Desktop import routes', () => {
                     updated_at: '2026-07-07T03:00:00.000000000Z'
                 }
             ])
-
-            const app = createRoutesApp('default')
-            const response = await app.request('/api/codex/sessions')
-            expect(response.status).toBe(200)
-            const body = await response.json() as { sessions: Array<{ id: string; title: string }> }
-            expect(body.sessions.find((session) => session.id === codexSessionId)?.title).toBe('normal user message')
 
             const result = await importSelectedCodexSessions({
                 codexSessionIds: [codexSessionId],

@@ -3429,30 +3429,40 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
 
                     if (resumeCandidate) {
                         try {
-                            const shouldForkImportedSource = Boolean(
+                            const isImportedSource = Boolean(
                                 session.sourceSessionId
                                 && resumeCandidate === session.sourceSessionId
                             );
-                            const response = shouldForkImportedSource
-                                ? await appServerClient.forkThread({
-                                    threadId: resumeCandidate,
-                                    ...threadParams
-                                }, {
-                                    signal: this.abortController.signal
-                                })
-                                : await appServerClient.resumeThread({
+                            let response;
+                            try {
+                                response = await appServerClient.resumeThread({
                                     threadId: resumeCandidate,
                                     ...threadParams
                                 }, {
                                     signal: this.abortController.signal
                                 });
+                            } catch (resumeError) {
+                                if (!isImportedSource) {
+                                    throw resumeError;
+                                }
+                                logger.warn(
+                                    `[Codex] Failed to resume imported source thread ${resumeCandidate}; falling back to fork`,
+                                    resumeError
+                                );
+                                response = await appServerClient.forkThread({
+                                    threadId: resumeCandidate,
+                                    ...threadParams
+                                }, {
+                                    signal: this.abortController.signal
+                                });
+                            }
                             const responseRecord = asRecord(response);
                             const responseThread = responseRecord ? asRecord(responseRecord.thread) : null;
                             threadId = asString(responseThread?.id) ?? resumeCandidate;
                             applyResolvedModel(responseRecord?.model);
-                            logger.debug(shouldForkImportedSource
-                                ? `[Codex] Forked imported app-server thread ${resumeCandidate} -> ${threadId}`
-                                : `[Codex] Resumed app-server thread ${threadId}`);
+                            logger.debug(threadId === resumeCandidate
+                                ? `[Codex] Resumed app-server thread ${threadId}`
+                                : `[Codex] Forked imported app-server thread ${resumeCandidate} -> ${threadId}`);
                         } catch (error) {
                             const resumeError = formatCodexResumeError(error);
                             logger.warn(`[Codex] Failed to resume app-server thread ${resumeCandidate}; preserving old conversation boundary: ${resumeError}`, error);

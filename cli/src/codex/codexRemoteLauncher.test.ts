@@ -2011,7 +2011,7 @@ describe('codexRemoteLauncher', () => {
         expect(session.thinking).toBe(false);
     });
 
-    it('forks an imported Codex source thread before continuing it', async () => {
+    it('resumes an imported Codex source thread directly when available', async () => {
         const { session } = createSessionStub(['first message', 'second message']);
         session.sessionId = 'thread-source';
         (session as { sourceSessionId?: string }).sourceSessionId = 'thread-source';
@@ -2019,11 +2019,28 @@ describe('codexRemoteLauncher', () => {
         const exitReason = await codexRemoteLauncher(session as never);
 
         expect(exitReason).toBe('exit');
-        expect(harness.forkThreadIds).toEqual(['thread-source']);
-        expect(harness.resumeThreadIds).toEqual([]);
+        expect(harness.forkThreadIds).toEqual([]);
+        expect(harness.resumeThreadIds).toEqual(['thread-source']);
         expect(harness.startThreadIds).toEqual([]);
-        expect(harness.startTurnThreadIds).toEqual(['fork-thread-source', 'fork-thread-source']);
+        expect(harness.startTurnThreadIds).toEqual(['thread-source', 'thread-source']);
         expect(harness.startTurnMessages).toEqual(['first message', 'second message']);
+        expect(session.sessionId).toBe('thread-source');
+        expect(session.thinking).toBe(false);
+    });
+
+    it('forks an imported Codex source thread when direct resume fails', async () => {
+        harness.failResumeThreadIds = ['thread-source'];
+        const { session } = createSessionStub(['first message']);
+        session.sessionId = 'thread-source';
+        (session as { sourceSessionId?: string }).sourceSessionId = 'thread-source';
+
+        const exitReason = await codexRemoteLauncher(session as never);
+
+        expect(exitReason).toBe('exit');
+        expect(harness.resumeThreadIds).toEqual(['thread-source']);
+        expect(harness.forkThreadIds).toEqual(['thread-source']);
+        expect(harness.startThreadIds).toEqual([]);
+        expect(harness.startTurnThreadIds).toEqual(['fork-thread-source']);
         expect(session.sessionId).toBe('fork-thread-source');
         expect(session.thinking).toBe(false);
     });
