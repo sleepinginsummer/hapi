@@ -1,0 +1,37 @@
+name: Fork Release
+
+on:
+    push:
+        tags:
+            - 'fork-v*'
+
+permissions:
+    contents: write
+
+jobs:
+    release:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.3.14
+            - run: bun install
+            - run: bun run build:single-exe:all
+            - name: Package npm-installable binaries
+              run: |
+                  cd cli
+                  bun run prepare-npm-packages
+                  mkdir -p release-artifacts
+                  npm pack ./npm/linux-x64 --pack-destination release-artifacts
+                  npm pack ./npm/darwin-arm64 --pack-destination release-artifacts
+                  cd release-artifacts
+                  sha256sum * > checksums.txt
+            - name: Create GitHub Release
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  gh release create "${GITHUB_REF_NAME}" \
+                      --title "HAPI Fork ${GITHUB_REF_NAME}" \
+                      --generate-notes \
+                      cli/release-artifacts/*
