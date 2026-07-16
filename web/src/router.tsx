@@ -1118,26 +1118,25 @@ function NewSessionPage() {
                 <div className="flex-1 font-semibold">{t('newSession.title')}</div>
             </div>
 
-            <div
-                className="app-scroll-y flex-1 min-h-0"
-                style={{ paddingBottom: 'calc(var(--app-floating-bottom-offset, 0px) + env(safe-area-inset-bottom))' }}
-            >
+            <div className="flex min-h-0 flex-1 flex-col">
                 {machinesError ? (
-                    <div className="p-3 text-sm text-red-600">
+                    <div className="shrink-0 p-3 text-sm text-red-600">
                         {machinesError}
                     </div>
                 ) : null}
 
-                <NewSession
-                    api={api}
-                    machines={machines}
-                    isLoading={machinesLoading}
-                    onCancel={handleCancel}
-                    onSuccess={handleSuccess}
-                    onChooseFolder={handleChooseFolder}
-                    initialDirectory={initialDirectory}
-                    initialMachineId={initialMachineId}
-                />
+                <div className="min-h-0 flex-1">
+                    <NewSession
+                        api={api}
+                        machines={machines}
+                        isLoading={machinesLoading}
+                        onCancel={handleCancel}
+                        onSuccess={handleSuccess}
+                        onChooseFolder={handleChooseFolder}
+                        initialDirectory={initialDirectory}
+                        initialMachineId={initialMachineId}
+                    />
+                </div>
             </div>
         </div>
     )
