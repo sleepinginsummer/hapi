@@ -348,15 +348,26 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                 ) : null}
 
                 {sessionActive ? (
-                    <button
-                        type="button"
-                        role="menuitem"
-                        className={`${baseItemClassName} text-red-500 hover:bg-red-500/10`}
-                        onClick={handleArchive}
-                    >
-                        <ArchiveIcon className="text-red-500" />
-                        {t('session.action.archive')}
-                    </button>
+                    <>
+                        <button
+                            type="button"
+                            role="menuitem"
+                            className={`${baseItemClassName} text-red-500 hover:bg-red-500/10`}
+                            onClick={handleArchive}
+                        >
+                            <ArchiveIcon className="text-red-500" />
+                            {t('session.action.archive')}
+                        </button>
+                        <button
+                            type="button"
+                            role="menuitem"
+                            className={`${baseItemClassName} text-red-500 hover:bg-red-500/10`}
+                            onClick={handleDelete}
+                        >
+                            <TrashIcon className="text-red-500" />
+                            {t('session.action.delete')}
+                        </button>
+                    </>
                 ) : (
                     <>
                         {onReopen ? (

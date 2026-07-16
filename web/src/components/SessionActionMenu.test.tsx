@@ -73,6 +73,26 @@ describe('SessionActionMenu - Reopen action', () => {
     })
 })
 
+describe('SessionActionMenu - Delete action', () => {
+    it('renders Delete alongside Archive for active sessions', () => {
+        renderMenu({ sessionActive: true })
+
+        expect(screen.getByRole('menuitem', { name: /Archive/ })).toBeInTheDocument()
+        expect(screen.getByRole('menuitem', { name: /Delete/ })).toBeInTheDocument()
+    })
+
+    it('fires onDelete and closes the menu for an active session', () => {
+        const onDelete = vi.fn()
+        const onClose = vi.fn()
+        renderMenu({ sessionActive: true, onDelete, onClose })
+
+        fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
+
+        expect(onDelete).toHaveBeenCalledTimes(1)
+        expect(onClose).toHaveBeenCalledTimes(1)
+    })
+})
+
 describe('SessionActionMenu - Codex sync action', () => {
     it('renders Sync from Codex only when a handler is provided', () => {
         const { rerender } = renderMenu({ onSyncCodex: undefined })

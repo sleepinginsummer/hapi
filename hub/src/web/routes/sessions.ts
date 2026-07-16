@@ -651,11 +651,11 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
             return sessionResult
         }
 
-        if (sessionResult.session.active) {
-            return c.json({ error: 'Cannot delete active session. Archive it first.' }, 409)
-        }
-
         try {
+            // 运行中会话必须先结束 agent，归档成功后再复用原有删除逻辑。
+            if (sessionResult.session.active) {
+                await engine.archiveSession(sessionResult.sessionId)
+            }
             await engine.deleteSession(sessionResult.sessionId)
             return c.json({ ok: true })
         } catch (error) {

@@ -63,6 +63,7 @@ function createApp(session: Session, opts?: {
     getSessionExport?: (sessionId: string, session: Session) => unknown
     sessionExists?: boolean
     archiveSession?: (sessionId: string) => Promise<void>
+    deleteSession?: (sessionId: string) => Promise<void>
 }) {
     const applySessionConfigCalls: Array<[string, Record<string, unknown>]> = []
     const applySessionConfig = async (sessionId: string, config: Record<string, unknown>) => {
@@ -136,6 +137,7 @@ function createApp(session: Session, opts?: {
         resumeSession,
         reopenSession,
         archiveSession: archiveSessionMock,
+        deleteSession: opts?.deleteSession ?? (async () => {}),
         getSessionExport: opts?.getSessionExport ?? (() => ({
             type: 'success',
             payload: {
@@ -162,6 +164,51 @@ function createApp(session: Session, opts?: {
 }
 
 describe('sessions routes', () => {
+    describe('DELETE /sessions/:id', () => {
+        it('archives an active session before deleting it', async () => {
+            const calls: string[] = []
+            const session = createSession({ active: true })
+            const { app } = createApp(session, {
+                archiveSession: async (sessionId) => { calls.push(`archive:${sessionId}`) },
+                deleteSession: async (sessionId) => { calls.push(`delete:${sessionId}`) }
+            })
+
+            const response = await app.request('/api/sessions/session-1', { method: 'DELETE' })
+
+            expect(response.status).toBe(200)
+            expect(await response.json()).toEqual({ ok: true })
+            expect(calls).toEqual(['archive:session-1', 'delete:session-1'])
+        })
+
+        it('does not delete when archiving an active session fails', async () => {
+            let deleteCalled = false
+            const session = createSession({ active: true })
+            const { app } = createApp(session, {
+                archiveSession: async () => { throw new Error('archive failed') },
+                deleteSession: async () => { deleteCalled = true }
+            })
+
+            const response = await app.request('/api/sessions/session-1', { method: 'DELETE' })
+
+            expect(response.status).toBe(500)
+            expect(deleteCalled).toBe(false)
+        })
+
+        it('deletes an inactive session without archiving it again', async () => {
+            const calls: string[] = []
+            const session = createSession({ active: false })
+            const { app } = createApp(session, {
+                archiveSession: async () => { calls.push('archive') },
+                deleteSession: async () => { calls.push('delete') }
+            })
+
+            const response = await app.request('/api/sessions/session-1', { method: 'DELETE' })
+
+            expect(response.status).toBe(200)
+            expect(calls).toEqual(['delete'])
+        })
+    })
+
     it('exports an empty session conversation payload', async () => {
         const session = createSession()
         const { app } = createApp(session)
