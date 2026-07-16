@@ -25,6 +25,7 @@ jobs:
                   mkdir -p release-artifacts
                   npm pack ./npm/linux-x64 --pack-destination release-artifacts
                   npm pack ./npm/darwin-arm64 --pack-destination release-artifacts
+                  npm pack ./npm/win32-x64 --pack-destination release-artifacts
                   cd release-artifacts
                   sha256sum * > checksums.txt
             - name: Create GitHub Release
