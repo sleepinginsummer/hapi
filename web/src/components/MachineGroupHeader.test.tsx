@@ -23,7 +23,7 @@ const machine: Machine = {
 }
 
 describe('MachineGroupHeader', () => {
-    it('renders a single-row machine tile with os label and compact health', () => {
+    it('renders a single-row machine tile without os label and with compact health', () => {
         render(
             <I18nProvider>
                 <MachineGroupHeader
@@ -45,12 +45,12 @@ describe('MachineGroupHeader', () => {
         )
 
         expect(screen.getByRole('button', { name: /Teemo/i })).toBeTruthy()
-        expect(screen.getByText('Windows')).toBeTruthy()
+        expect(screen.queryByText('Windows')).toBeNull()
         expect(screen.getByText('(4)')).toBeTruthy()
         expect(screen.getByLabelText(/CPU 12 percent; RAM 88 percent/i)).toBeTruthy()
     })
 
-    it('shows compact uptime in the machine meta row', () => {
+    it('does not show uptime in the machine meta row', () => {
         render(
             <I18nProvider>
                 <MachineGroupHeader
@@ -75,6 +75,7 @@ describe('MachineGroupHeader', () => {
             </I18nProvider>
         )
 
-        expect(screen.getByTitle('Linux · up 1h 54m')).toBeTruthy()
+        expect(screen.queryByText('Linux')).toBeNull()
+        expect(screen.queryByText(/up 1h 54m/i)).toBeNull()
     })
 })

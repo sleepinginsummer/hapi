@@ -4,13 +4,10 @@ import { MACHINE_ROW_TOOLTIP_FOCUS_CLASS } from '@/components/HoverTooltip'
 import { MachineHealthIndicator } from '@/components/MachineHealthIndicator'
 import {
     getMachineHost,
-    getMachinePlatform,
-    resolveMachineOsLabel,
     shouldShowMachineHostSubtitle,
     type MachineHealthPresentation,
 } from '@/lib/machineHealth'
 import { cn } from '@/lib/utils'
-import { useTranslation } from '@/lib/use-translation'
 
 function MachineIcon(props: { className?: string }) {
     return (
@@ -56,16 +53,6 @@ function ChevronIcon(props: { className?: string; collapsed?: boolean }) {
     )
 }
 
-function formatOsLabel(
-    osLabel: ReturnType<typeof resolveMachineOsLabel>,
-    t: (key: string) => string
-): string {
-    if (osLabel.kind === 'raw') {
-        return osLabel.value
-    }
-    return t(osLabel.key)
-}
-
 export function MachineGroupHeader(props: {
     label: string
     sessionCount: number
@@ -74,22 +61,9 @@ export function MachineGroupHeader(props: {
     machine?: Machine
     healthPresentation: MachineHealthPresentation | null
 }) {
-    const { t } = useTranslation()
     const healthTooltipId = useId()
-    const platform = getMachinePlatform(props.machine)
     const host = getMachineHost(props.machine)
-    const osLabel = resolveMachineOsLabel(platform)
-    const osText = formatOsLabel(osLabel, t)
     const showHost = shouldShowMachineHostSubtitle(props.label, host)
-    const uptimeText = props.healthPresentation?.uptimeDetail
-    const metaParts = [osText]
-    if (showHost && host) {
-        metaParts.push(host)
-    }
-    if (uptimeText) {
-        metaParts.push(t('machine.health.uptimeCompact', { value: uptimeText }))
-    }
-    const machineMeta = metaParts.join(' · ')
     const hasHealth = props.healthPresentation && props.healthPresentation.metrics.length > 0
 
     return (
@@ -109,12 +83,14 @@ export function MachineGroupHeader(props: {
             <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--app-fg)]">
                 {props.label}
             </span>
-            <span
-                className="min-w-0 max-w-[8rem] shrink truncate text-[11px] text-[var(--app-hint)]"
-                title={machineMeta}
-            >
-                {machineMeta}
-            </span>
+            {showHost && host ? (
+                <span
+                    className="min-w-0 max-w-[8rem] shrink truncate text-[11px] text-[var(--app-hint)]"
+                    title={host}
+                >
+                    {host}
+                </span>
+            ) : null}
             {hasHealth ? (
                 <MachineHealthIndicator
                     presentation={props.healthPresentation!}
