@@ -28,6 +28,7 @@ import type {
     CodexModelsResponse,
     CursorMigrateOutcome,
     CursorMigrateToAcpRequest,
+    CursorChatStoreStatus,
     CursorModelsResponse,
     DeleteUploadResponse,
     FileReadResponse,
@@ -39,6 +40,7 @@ import type {
     MachinePathsExistsResponse,
     OpencodeModelsResponse,
     OpencodeReasoningEffortResponse,
+    QueuedStateResponse,
     ReopenSessionResponse,
     UploadFileResponse
 } from '@hapi/protocol/apiTypes'
@@ -411,6 +413,12 @@ export class ApiClient {
         return response.sessionId
     }
 
+    async getCursorChatStoreStatus(sessionId: string): Promise<CursorChatStoreStatus> {
+        return await this.request<CursorChatStoreStatus>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/cursor-chat-store`
+        )
+    }
+
     async sendMessage(sessionId: string, text: string, localId?: string | null, attachments?: AttachmentMetadata[], scheduledAt?: number | null): Promise<void> {
         await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, {
             method: 'POST',
@@ -421,6 +429,16 @@ export class ApiClient {
                 scheduledAt: scheduledAt ?? undefined
             })
         })
+    }
+
+    async getQueuedState(sessionId: string, localIds: string[]): Promise<QueuedStateResponse> {
+        return await this.request<QueuedStateResponse>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/messages/queued-state`,
+            {
+                method: 'POST',
+                body: JSON.stringify({ localIds })
+            }
+        )
     }
 
     async cancelMessage(sessionId: string, messageId: string): Promise<CancelMessageResponse> {
