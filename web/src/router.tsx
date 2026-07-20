@@ -575,17 +575,6 @@ function SessionsPage() {
                             </button>
                             <button
                                 type="button"
-                                onClick={handleRefresh}
-                                disabled={isLoading}
-                                aria-label={t('button.refresh')}
-                                aria-busy={isLoading}
-                                className="p-1.5 rounded-full text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors disabled:opacity-60 disabled:cursor-wait"
-                                title={t('button.refresh')}
-                            >
-                                <RefreshIcon className={`h-5 w-5 ${isLoading ? 'animate-spin' : ''}`} />
-                            </button>
-                            <button
-                                type="button"
                                 onClick={() => navigate({ to: '/browse' })}
                                 className="p-1.5 rounded-full text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
                                 title={t('browse.nav')}
