@@ -163,7 +163,8 @@ export const ListCodexSessionsRpcRequestSchema = z.object({
 })
 
 export const ListCodexSessionsRpcResponseSchema = z.union([
-    z.object({ success: z.literal(true), sessions: z.array(z.union([CodexLocalSessionSummarySchema, CodexLocalSessionWithMessagesSchema])) }),
+    // 完整会话必须优先匹配，否则摘要 Schema 会在解析时剥离 messages。
+    z.object({ success: z.literal(true), sessions: z.array(z.union([CodexLocalSessionWithMessagesSchema, CodexLocalSessionSummarySchema])) }),
     z.object({ success: z.literal(false), error: z.string() })
 ])
 
