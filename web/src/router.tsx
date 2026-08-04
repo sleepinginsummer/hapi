@@ -28,6 +28,7 @@ import { useSidebarResize } from '@/hooks/useSidebarResize'
 import { useMessages } from '@/hooks/queries/useMessages'
 import { useMachines } from '@/hooks/queries/useMachines'
 import { useSession } from '@/hooks/queries/useSession'
+import { useCursorChatStoreStatus } from '@/hooks/queries/useCursorChatStoreStatus'
 import { useSessions } from '@/hooks/queries/useSessions'
 import { useSlashCommands } from '@/hooks/queries/useSlashCommands'
 import { useSkills } from '@/hooks/queries/useSkills'
@@ -41,12 +42,21 @@ import { fetchLatestMessages, seedMessageWindowFromSession } from '@/lib/message
 import { clearDraftsAfterSend } from '@/lib/clearDraftsAfterSend'
 import { inactiveSessionCanResume } from '@/lib/sessionResume'
 import { markSessionSeen } from '@/lib/sessionLastSeen'
+import { useSessionBrowserTitle } from '@/hooks/useSessionBrowserTitle'
 import { clearCodexImportedSession, markCodexSessionsImported } from '@/lib/codexImportedSessions'
 import type { Machine, CodexDuplicateSessionGroup, CodexLocalSessionSummary } from '@/types/api'
 import FilesPage from '@/routes/sessions/files'
 import FilePage from '@/routes/sessions/file'
 import TerminalPage from '@/routes/sessions/terminal'
-import SettingsPage from '@/routes/settings'
+import SettingsLayout from '@/routes/settings/layout'
+import SettingsHubPage from '@/routes/settings'
+import SettingsGeneralPage from '@/routes/settings/general'
+import SettingsDisplayPage from '@/routes/settings/display'
+import SettingsChatPage from '@/routes/settings/chat'
+import SettingsVoicePage from '@/routes/settings/voice'
+import SettingsVoiceVoicesPage from '@/routes/settings/voice-voices'
+import SettingsVoiceAdvancedPage from '@/routes/settings/voice-advanced'
+import SettingsAboutPage from '@/routes/settings/about'
 import SharePage from '@/routes/share'
 import { setSharePendingTransfer } from '@/lib/sharePendingState'
 import { deleteShareTransfer } from '@/lib/shareTransfer'
@@ -705,6 +715,11 @@ function SessionPage() {
         refetch: refetchSession,
     } = useSession(api, sessionId)
     const {
+        status: cursorChatStoreStatus,
+        isApplicable: cursorChatStoreApplicable,
+        error: cursorChatStoreError,
+    } = useCursorChatStoreStatus({ api, session })
+    const {
         messages,
         pendingMessages,
         warning: messagesWarning,
@@ -799,6 +814,16 @@ function SessionPage() {
         })()
     }, [api, queryClient, navigate, addToast, t])
 
+    const cursorReopenDisabledReason = cursorChatStoreApplicable && cursorChatStoreStatus?.onDisk !== true
+        ? cursorChatStoreError
+            ? t('session.action.reopenCursorCheckFailed')
+            : cursorChatStoreStatus?.onDisk === false
+                ? t('session.action.reopenCursorMissing')
+                : t('session.action.reopenCursorChecking')
+        : undefined
+    const canOfferInactiveReopen = session
+        ? inactiveSessionCanResume(session, messages.length, cursorChatStoreStatus?.onDisk)
+        : false
     const rawSendError = sendErrors[sessionId] ?? null
     const sendError: ComposerSendError | null = rawSendError
         ? {
@@ -806,7 +831,7 @@ function SessionPage() {
             text: rawSendError.text,
             message: rawSendError.message,
             scheduledAt: rawSendError.scheduledAt,
-            action: rawSendError.code === 'session_inactive'
+            action: rawSendError.code === 'session_inactive' && canOfferInactiveReopen
                 ? {
                     label: t('chat.sendError.sessionInactive.action'),
                     onClick: () => reopenFromErrorAffordance(sessionId),
@@ -853,7 +878,7 @@ function SessionPage() {
             if (!api || !session || session.active) {
                 return currentSessionId
             }
-            if (!inactiveSessionCanResume(session, messages.length)) {
+            if (!inactiveSessionCanResume(session, messages.length, cursorChatStoreStatus?.onDisk)) {
                 // #918: surface as a session_inactive ApiError so the
                 // onError consumer's classifier renders the Reopen
                 // affordance.  `status: 409` mirrors the hub guard for
@@ -997,6 +1022,8 @@ function SessionPage() {
         <SessionChat
             api={api}
             session={session}
+            cursorChatOnDisk={cursorChatStoreStatus?.onDisk}
+            reopenDisabledReason={cursorReopenDisabledReason}
             messages={messages}
             pendingMessages={pendingMessages}
             messagesWarning={messagesWarning}
@@ -1028,7 +1055,8 @@ function SessionDetailRoute() {
     const pathname = useLocation({ select: location => location.pathname })
     const { sessionId } = useParams({ from: '/sessions/$sessionId' })
     const navigate = useNavigate()
-    const { notFound: sessionNotFound } = useSession(api, sessionId)
+    const { session, notFound: sessionNotFound } = useSession(api, sessionId)
+    useSessionBrowserTitle(session)
     const basePath = `/sessions/${sessionId}`
     const isChat = pathname === basePath || pathname === `${basePath}/`
 
@@ -1313,7 +1341,55 @@ const browseRoute = createRoute({
 const settingsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/settings',
-    component: SettingsPage,
+    component: SettingsLayout,
+})
+
+const settingsIndexRoute = createRoute({
+    getParentRoute: () => settingsRoute,
+    path: '/',
+    component: SettingsHubPage,
+})
+
+const settingsGeneralRoute = createRoute({
+    getParentRoute: () => settingsRoute,
+    path: 'general',
+    component: SettingsGeneralPage,
+})
+
+const settingsDisplayRoute = createRoute({
+    getParentRoute: () => settingsRoute,
+    path: 'display',
+    component: SettingsDisplayPage,
+})
+
+const settingsChatRoute = createRoute({
+    getParentRoute: () => settingsRoute,
+    path: 'chat',
+    component: SettingsChatPage,
+})
+
+const settingsVoiceRoute = createRoute({
+    getParentRoute: () => settingsRoute,
+    path: 'voice',
+    component: SettingsVoicePage,
+})
+
+const settingsVoiceVoicesRoute = createRoute({
+    getParentRoute: () => settingsRoute,
+    path: 'voice/voices',
+    component: SettingsVoiceVoicesPage,
+})
+
+const settingsVoiceAdvancedRoute = createRoute({
+    getParentRoute: () => settingsRoute,
+    path: 'voice/advanced',
+    component: SettingsVoiceAdvancedPage,
+})
+
+const settingsAboutRoute = createRoute({
+    getParentRoute: () => settingsRoute,
+    path: 'about',
+    component: SettingsAboutPage,
 })
 
 // Web Share Target landing route. Service worker (`web/src/sw.ts`)
@@ -1347,7 +1423,16 @@ export const routeTree = rootRoute.addChildren([
         ]),
     ]),
     browseRoute,
-    settingsRoute,
+    settingsRoute.addChildren([
+        settingsIndexRoute,
+        settingsGeneralRoute,
+        settingsDisplayRoute,
+        settingsChatRoute,
+        settingsVoiceRoute,
+        settingsVoiceVoicesRoute,
+        settingsVoiceAdvancedRoute,
+        settingsAboutRoute,
+    ]),
     shareRoute,
 ])
 

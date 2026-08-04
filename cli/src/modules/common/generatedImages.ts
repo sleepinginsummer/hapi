@@ -116,6 +116,7 @@ function persistGeneratedImage(image: GeneratedImageMetadata): void {
     try {
         const cacheDir = getGeneratedImageCacheDir()
         mkdirSync(cacheDir, { recursive: true })
+        image.createdAt = Math.max(image.createdAt, getLatestPersistedCreatedAt(cacheDir) + 1)
         writeFileSync(join(cacheDir, `${image.id}.bin`), image.content)
         writeFileSync(join(cacheDir, `${image.id}.json`), JSON.stringify({
             id: image.id,
@@ -127,6 +128,22 @@ function persistGeneratedImage(image: GeneratedImageMetadata): void {
     } catch {
         // ponytail: cache only; if disk write fails, fall back to in-memory behavior.
     }
+}
+
+function getLatestPersistedCreatedAt(cacheDir: string): number {
+    let latest = 0
+    for (const name of readdirSync(cacheDir)) {
+        if (!name.endsWith('.json')) continue
+        try {
+            const createdAt = JSON.parse(readFileSync(join(cacheDir, name), 'utf8')).createdAt
+            if (typeof createdAt === 'number' && Number.isFinite(createdAt)) {
+                latest = Math.max(latest, createdAt)
+            }
+        } catch {
+            // Ignore malformed cache metadata; eviction handles stale entries separately.
+        }
+    }
+    return latest
 }
 
 function loadPersistedGeneratedImage(id: string): GeneratedImageMetadata | null {

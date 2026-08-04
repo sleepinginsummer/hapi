@@ -9,26 +9,15 @@ import { SessionExportDialog } from '@/components/SessionExportDialog'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { formatReopenError } from '@/lib/reopenError'
+import { formatCodexReasoningLabel, shouldShowCodexReasoningLabel } from '@/lib/codexStatusLabels'
 import { getSessionModelLabel } from '@/lib/sessionModelLabel'
 import { useTranslation } from '@/lib/use-translation'
 import { AgentFlavorIcon } from '@/components/AgentFlavorIcon'
+import { isFastServiceTier } from '@/components/AssistantChat/codexFastMode'
+import { getSessionTitle } from '@/lib/sessionTitle'
 import { useToast } from '@/lib/toast-context'
 import { queryKeys } from '@/lib/query-keys'
 import { markCodexSessionsImported } from '@/lib/codexImportedSessions'
-
-function getSessionTitle(session: Session): string {
-    if (session.metadata?.name) {
-        return session.metadata.name
-    }
-    if (session.metadata?.summary?.text) {
-        return session.metadata.summary.text
-    }
-    if (session.metadata?.path) {
-        const parts = session.metadata.path.split('/').filter(Boolean)
-        return parts.length > 0 ? parts[parts.length - 1] : session.id.slice(0, 8)
-    }
-    return session.id.slice(0, 8)
-}
 
 function FilesIcon(props: { className?: string }) {
     return (
@@ -107,6 +96,8 @@ export function SessionHeader(props: {
     onToggleOutline?: () => void
     outlineActive?: boolean
     api: ApiClient | null
+    canReopen?: boolean
+    reopenDisabledReason?: string
     onSessionDeleted?: () => void
     onSessionReopened?: (newSessionId: string) => void
 }) {
@@ -117,6 +108,12 @@ export function SessionHeader(props: {
     const title = useMemo(() => getSessionTitle(session), [session])
     const worktreeBranch = session.metadata?.worktree?.branch
     const modelLabel = getSessionModelLabel(session)
+    const agentFlavor = session.metadata?.flavor ?? null
+    const reasoningLabel = shouldShowCodexReasoningLabel(agentFlavor)
+        ? formatCodexReasoningLabel(session.modelReasoningEffort)
+        : null
+    // Match expected Fast badge semantics (#1004): only explicit service tier, no effort/model heuristics.
+    const showFastBadge = agentFlavor === 'codex' && isFastServiceTier(session.serviceTier)
     const codexSessionId = session.metadata?.flavor === 'codex'
         ? session.metadata.codexSessionId?.trim() || null
         : null
@@ -249,6 +246,16 @@ export function SessionHeader(props: {
                                     {t(modelLabel.key)}: {modelLabel.value}
                                 </span>
                             ) : null}
+                            {reasoningLabel ? (
+                                <span data-testid="session-header-reasoning" className="hidden sm:inline">
+                                    {reasoningLabel}
+                                </span>
+                            ) : null}
+                            {showFastBadge ? (
+                                <span data-testid="session-header-fast" className="text-[#34C759]">
+                                    fast
+                                </span>
+                            ) : null}
                             {worktreeBranch ? (
                                 <span>{t('session.item.worktree')}: {worktreeBranch}</span>
                             ) : null}
@@ -305,7 +312,8 @@ export function SessionHeader(props: {
                 onExport={() => setExportOpen(true)}
                 onSyncCodex={api && codexSessionId ? handleSyncCodex : undefined}
                 onArchive={() => setArchiveOpen(true)}
-                onReopen={handleReopen}
+                onReopen={props.canReopen === false ? undefined : handleReopen}
+                reopenDisabledReason={props.reopenDisabledReason}
                 onDelete={() => setDeleteOpen(true)}
                 anchorPoint={menuAnchorPoint}
                 menuId={menuId}
@@ -335,7 +343,7 @@ export function SessionHeader(props: {
             <SessionExportDialog
                 isOpen={exportOpen}
                 onClose={() => setExportOpen(false)}
-                session={session}
+                sessionId={session.id}
                 api={api}
             />
 

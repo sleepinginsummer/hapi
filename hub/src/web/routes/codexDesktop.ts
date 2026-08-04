@@ -96,10 +96,20 @@ type CodexImportedMessageContent = {
     }
 }
 
+type CodexImportedMessageSource = 'event_msg' | 'response_item'
+type CodexImportedMessageEntry = {
+    source: CodexImportedMessageSource
+    message: CodexImportedMessageContent
+}
+
 type CodexTranscriptImportData = CodexLocalSessionSummary & {
     messages: CodexImportedMessageContent[]
 }
 
+type CodexSessionIndexTitle = {
+    threadName: string
+    updatedAt: string
+}
 type RemoteCodexSession = CodexTranscriptImportData
 
 type ImportCandidate = {
@@ -222,6 +232,10 @@ function getCodexSessionRoots(): string[] {
     return [join(codexHome, 'sessions')]
 }
 
+function getCodexSessionIndexPath(): string {
+    return join(getCodexHome(), 'session_index.jsonl')
+}
+
 function collectJsonlFiles(root: string, files: string[]): void {
     if (!existsSync(root)) return
     let entries
@@ -287,10 +301,13 @@ function truncateText(value: string, maxLength: number): string {
     return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value
 }
 
-function shouldIgnoreSyntheticUserMessage(text: string): boolean {
+function shouldIgnoreInjectedResponseUserMessage(text: string): boolean {
     const normalized = text.trim()
-    return normalized.startsWith('# AGENTS.md instructions')
-        || normalized.startsWith('<environment_context>')
+    const lower = normalized.toLowerCase()
+    const isAgentInstructions = lower.startsWith('# agents.md instructions')
+    const isEnvironmentContext = lower.startsWith('<environment_context>')
+        && lower.endsWith('</environment_context>')
+    return isAgentInstructions || isEnvironmentContext
 }
 
 function inferSessionIdFromFileName(filePath: string): string | null {
@@ -386,7 +403,7 @@ function getLatestCodexUserMessage(lines: string[]): string | null {
             const payload = asRecord(record.payload)
             if (payload?.type !== 'message' || payload.role !== 'user') continue
             const text = extractCodexText(payload.content)
-            if (text && !shouldIgnoreSyntheticUserMessage(text)) {
+            if (text && !shouldIgnoreInjectedResponseUserMessage(text)) {
                 return truncateText(text, 140)
             }
         } catch {
@@ -399,9 +416,14 @@ function getLatestCodexUserMessage(lines: string[]): string | null {
 function getCodexSessionTitle(
     cwd: string | null | undefined,
     sessionId: string,
+    sessionIndexTitle: string | null,
     changedTitle: string | null,
     firstUserMessage: string | null
 ): string {
+    if (sessionIndexTitle) {
+        return truncateText(sessionIndexTitle, 80)
+    }
+
     if (changedTitle) {
         return truncateText(changedTitle, 80)
     }
@@ -425,7 +447,48 @@ function isSubagentSource(value: unknown): boolean {
     return record ? Object.prototype.hasOwnProperty.call(record, 'subagent') : false
 }
 
-function parseCodexLocalSession(filePath: string): CodexLocalSessionSummary | null {
+function readCodexSessionIndexTitles(): Map<string, CodexSessionIndexTitle> {
+    let content: string
+    try {
+        content = readFileSync(getCodexSessionIndexPath(), 'utf-8')
+    } catch {
+        return new Map()
+    }
+
+    const titles = new Map<string, CodexSessionIndexTitle>()
+    for (const line of content.split(/\r?\n/).filter(Boolean)) {
+        let parsed: unknown
+        try {
+            parsed = JSON.parse(line)
+        } catch {
+            continue
+        }
+
+        const record = asRecord(parsed)
+        const id = typeof record?.id === 'string' ? record.id : null
+        const threadName = typeof record?.thread_name === 'string' && record.thread_name.trim()
+            ? record.thread_name.trim()
+            : null
+        const updatedAt = typeof record?.updated_at === 'string' && record.updated_at.trim()
+            ? record.updated_at.trim()
+            : null
+        if (!id || !threadName || !updatedAt) {
+            continue
+        }
+
+        const previous = titles.get(id)
+        if (!previous || previous.updatedAt < updatedAt) {
+            titles.set(id, { threadName, updatedAt })
+        }
+    }
+
+    return titles
+}
+
+function parseCodexLocalSession(
+    filePath: string,
+    sessionIndexTitles = new Map<string, CodexSessionIndexTitle>()
+): CodexLocalSessionSummary | null {
     let content: string
     try {
         content = readFileSync(filePath, 'utf-8')
@@ -476,7 +539,7 @@ function parseCodexLocalSession(filePath: string): CodexLocalSessionSummary | nu
             const payload = asRecord(record?.payload)
             if (payload?.type === 'message' && payload.role === 'user') {
                 const text = extractCodexText(payload.content)
-                if (text && !shouldIgnoreSyntheticUserMessage(text)) {
+                if (text && !shouldIgnoreInjectedResponseUserMessage(text)) {
                     firstUserMessage = text
                 }
             }
@@ -488,6 +551,7 @@ function parseCodexLocalSession(filePath: string): CodexLocalSessionSummary | nu
 
     sessionId = sessionId ?? inferSessionIdFromFileName(filePath)
     if (!sessionId) return null
+    const sessionIndexTitle = sessionIndexTitles.get(sessionId)?.threadName ?? null
 
     let modifiedAt = Date.now()
     try {
@@ -498,7 +562,7 @@ function parseCodexLocalSession(filePath: string): CodexLocalSessionSummary | nu
 
     return {
         id: sessionId,
-        title: getCodexSessionTitle(cwd, sessionId, changedTitle, firstUserMessage),
+        title: getCodexSessionTitle(cwd, sessionId, sessionIndexTitle, changedTitle, firstUserMessage),
         lastUserMessage,
         cwd,
         file: filePath,
@@ -514,9 +578,10 @@ function listLocalCodexSessions(limit = DEFAULT_CODEX_SESSION_SCAN_LIMIT): Codex
         collectJsonlFiles(root, files)
     }
 
+    const sessionIndexTitles = readCodexSessionIndexTitles()
     const deduped = new Map<string, CodexLocalSessionSummary>()
     for (const filePath of files) {
-        const session = parseCodexLocalSession(filePath)
+        const session = parseCodexLocalSession(filePath, sessionIndexTitles)
         if (!session) continue
         const previous = deduped.get(session.id)
         if (!previous || previous.modifiedAt < session.modifiedAt) {
@@ -572,7 +637,7 @@ function convertCodexRecordToImportedMessage(record: Record<string, unknown>): C
             const text = asString(payload.message)
                 ?? asString(payload.text)
                 ?? asString(payload.content)
-            if (!text || shouldIgnoreSyntheticUserMessage(text)) {
+            if (!text) {
                 return null
             }
             return buildImportedUserMessage(text)
@@ -610,11 +675,11 @@ function convertCodexRecordToImportedMessage(record: Record<string, unknown>): C
         if (itemType === 'message') {
             const role = asString(payload.role)
             const text = extractCodexText(payload.content)
-            if (!text || shouldIgnoreSyntheticUserMessage(text)) {
+            if (!text) {
                 return null
             }
             if (role === 'user') {
-                return buildImportedUserMessage(text)
+                return shouldIgnoreInjectedResponseUserMessage(text) ? null : buildImportedUserMessage(text)
             }
             if (role === 'assistant') {
                 return buildImportedAgentMessage({ type: 'message', message: text, id: randomUUID() })
@@ -654,22 +719,84 @@ function convertCodexRecordToImportedMessage(record: Record<string, unknown>): C
     return null
 }
 
+function getCodexImportedMessageSource(record: Record<string, unknown>): CodexImportedMessageSource | null {
+    const type = asString(record.type)
+    return type === 'event_msg' || type === 'response_item' ? type : null
+}
 
-function deduplicateAdjacentImportedMessages(messages: CodexImportedMessageContent[]): CodexImportedMessageContent[] {
-    const deduped: CodexImportedMessageContent[] = []
-    let previousKey: string | null = null
-
-    for (const message of messages) {
-        // 中文注释：Codex transcript 可能同时记录 event_msg 和 response_item；两者相邻且内容一致时只导入一次，避免历史会话成对重复。
-        const key = normalizeComparableContent(message)
-        if (key && key === previousKey) {
-            continue
-        }
-        deduped.push(message)
-        previousKey = key
+function normalizeComparableUserMessage(content: unknown): string | null {
+    const record = asRecord(content)
+    if (!record || record.role !== 'user') {
+        return null
     }
 
-    return deduped
+    const body = asRecord(record.content)
+    if (body?.type !== 'text' || typeof body.text !== 'string') {
+        return null
+    }
+
+    return stableSerialize({
+        role: 'user',
+        text: body.text.trimEnd()
+    })
+}
+
+function normalizeComparableAgentMessage(content: unknown): string | null {
+    const record = asRecord(content)
+    if (!record || record.role !== 'agent') {
+        return null
+    }
+
+    const body = asRecord(record.content)
+    if (!body || body.type !== AGENT_MESSAGE_PAYLOAD_TYPE) {
+        return null
+    }
+
+    const data = asRecord(body.data)
+    if (data?.type !== 'message' || typeof data.message !== 'string') {
+        return null
+    }
+
+    return stableSerialize({
+        role: 'agent',
+        type: 'message',
+        message: data.message
+    })
+}
+
+function normalizeAdjacentDuplicateMessage(content: unknown): string | null {
+    return normalizeComparableUserMessage(content) ?? normalizeComparableAgentMessage(content)
+}
+
+function isAdjacentDuplicateImportedMessage(
+    previous: CodexImportedMessageContent,
+    next: CodexImportedMessageContent
+): boolean {
+    const previousKey = normalizeAdjacentDuplicateMessage(previous)
+    const nextKey = normalizeAdjacentDuplicateMessage(next)
+    return previousKey !== null && previousKey === nextKey
+}
+
+function isMirroredAdjacentDuplicate(
+    previous: CodexImportedMessageEntry | undefined,
+    next: CodexImportedMessageEntry
+): boolean {
+    return Boolean(
+        previous
+        && previous.source !== next.source
+        && isAdjacentDuplicateImportedMessage(previous.message, next.message)
+    )
+}
+
+function isResponseItemDuplicateOfEventUserMessage(
+    entry: CodexImportedMessageEntry,
+    recentEventUserMessageKey: string | null
+): boolean {
+    if (entry.source !== 'response_item' || recentEventUserMessageKey === null) {
+        return false
+    }
+
+    return normalizeComparableUserMessage(entry.message) === recentEventUserMessageKey
 }
 
 function parseCodexTranscriptImportData(summary: CodexLocalSessionSummary): CodexTranscriptImportData | null {
@@ -681,7 +808,8 @@ function parseCodexTranscriptImportData(summary: CodexLocalSessionSummary): Code
     }
 
     const lines = content.split(/\r?\n/).filter(Boolean)
-    const messages: CodexImportedMessageContent[] = []
+    const entries: CodexImportedMessageEntry[] = []
+    let recentEventUserMessageKey: string | null = null
 
     for (const line of lines) {
         let parsed: unknown
@@ -693,15 +821,38 @@ function parseCodexTranscriptImportData(summary: CodexLocalSessionSummary): Code
 
         const record = asRecord(parsed)
         if (!record) continue
+        const source = getCodexImportedMessageSource(record)
+        if (!source) continue
         const message = convertCodexRecordToImportedMessage(record)
         if (message) {
-            messages.push(message)
+            const entry = { source, message }
+            const userMessageKey = normalizeComparableUserMessage(message)
+            if (source === 'event_msg' && userMessageKey !== null) {
+                const previous = entries[entries.length - 1]
+                if (previous?.source === 'response_item' && isMirroredAdjacentDuplicate(previous, entry)) {
+                    entries[entries.length - 1] = entry
+                } else {
+                    entries.push(entry)
+                }
+                recentEventUserMessageKey = userMessageKey
+                continue
+            }
+            if (isResponseItemDuplicateOfEventUserMessage(entry, recentEventUserMessageKey)) {
+                continue
+            }
+            const previous = entries[entries.length - 1]
+            if (isMirroredAdjacentDuplicate(previous, entry)) {
+                recentEventUserMessageKey = null
+                continue
+            }
+            entries.push(entry)
+            recentEventUserMessageKey = null
         }
     }
 
     return {
         ...summary,
-        messages: deduplicateAdjacentImportedMessages(messages)
+        messages: entries.map((entry) => entry.message)
     }
 }
 
@@ -766,8 +917,10 @@ function resolveCodexImportMachineId(
 ): string | null {
     if (!engine) return null
     const onlineMachines = engine.getOnlineMachinesByNamespace(namespace)
-    if (requestedMachineId && onlineMachines.some((machine) => machine.id === requestedMachineId)) {
-        return requestedMachineId
+    if (requestedMachineId) {
+        return onlineMachines.some((machine) => machine.id === requestedMachineId)
+            ? requestedMachineId
+            : null
     }
     if (cwd) {
         const resolved = resolveImportMachineId(cwd, namespace, engine)
@@ -961,12 +1114,18 @@ function selectImportTargetSession(
     store: Store,
     candidates: ImportCandidate[],
     codexSessionId: string,
-    importedComparableMessages: string[]
+    importedComparableMessages: string[],
+    sourceMachineId?: string | null
 ): ImportTargetSelection {
     const relatedCandidates = candidates
         .filter((candidate) => (
             candidate.metadata?.codexSessionId === codexSessionId
             || candidate.metadata?.codexSourceSessionId === codexSessionId
+        ))
+        .filter((candidate) => (
+            !sourceMachineId
+            || typeof candidate.metadata?.machineId !== 'string'
+            || candidate.metadata.machineId === sourceMachineId
         ))
         .sort((a, b) => b.updatedAt - a.updatedAt)
 
@@ -1661,7 +1820,8 @@ function importSingleCodexSession(options: {
             options.store,
             candidates,
             options.codexSessionId,
-            importedComparableMessages
+            importedComparableMessages,
+            options.machineId
         )
         const engine = options.getSyncEngine?.() ?? null
         const existingStored = target.sessionId ? options.store.sessions.getSessionByNamespace(target.sessionId, options.namespace) : null

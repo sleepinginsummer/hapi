@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { existsSync, mkdtempSync, rmSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const ioMock = vi.hoisted(() => vi.fn())
 const listOpencodeModelsForCwdMock = vi.hoisted(() => vi.fn())
+const listGrokModelsForCwdMock = vi.hoisted(() => vi.fn())
+const inspectCursorChatStoreMock = vi.hoisted(() => vi.fn())
 
 vi.mock('socket.io-client', () => ({
     io: ioMock
@@ -18,7 +20,15 @@ vi.mock('../modules/common/opencodeModels', () => ({
     listOpencodeModelsForCwd: listOpencodeModelsForCwdMock
 }))
 
-import { ApiMachineClient } from './apiMachine'
+vi.mock('../modules/common/grokModels', () => ({
+    listGrokModelsForCwd: listGrokModelsForCwdMock
+}))
+
+vi.mock('@/cursor/cursorChatStoreStatus', () => ({
+    inspectCursorChatStore: inspectCursorChatStoreMock
+}))
+
+import { ApiMachineClient, normalizeWindowsDriveRoot } from './apiMachine'
 import type { Machine } from './types'
 
 function makeMachine(id: string): Machine {
@@ -37,6 +47,18 @@ function makeMachine(id: string): Machine {
     }
 }
 
+describe('normalizeWindowsDriveRoot', () => {
+    it('restores the trailing separator when Windows realpath returns a bare drive', () => {
+        expect(normalizeWindowsDriveRoot('C:')).toBe('C:\\')
+        expect(normalizeWindowsDriveRoot('D:')).toBe('D:\\')
+    })
+
+    it('leaves non-drive-root paths unchanged', () => {
+        expect(normalizeWindowsDriveRoot('C:\\Users')).toBe('C:\\Users')
+        expect(normalizeWindowsDriveRoot('/tmp/workspace')).toBe('/tmp/workspace')
+    })
+})
+
 async function callListOpencodeModels(client: ApiMachineClient, machineId: string, cwd: string): Promise<unknown> {
     // Reach into the private rpc handler manager to dispatch a request.
     // Mirrors how the on-socket 'rpc-request' listener invokes handleRequest.
@@ -44,6 +66,28 @@ async function callListOpencodeModels(client: ApiMachineClient, machineId: strin
     const raw = await manager.handleRequest({
         method: `${machineId}:listOpencodeModelsForCwd`,
         params: JSON.stringify({ cwd })
+    })
+    return JSON.parse(raw) as unknown
+}
+
+async function callListGrokModels(client: ApiMachineClient, machineId: string, cwd: string): Promise<unknown> {
+    const manager = (client as unknown as { rpcHandlerManager: { handleRequest: (req: { method: string; params: string }) => Promise<string> } }).rpcHandlerManager
+    const raw = await manager.handleRequest({
+        method: `${machineId}:listGrokModelsForCwd`,
+        params: JSON.stringify({ cwd })
+    })
+    return JSON.parse(raw) as unknown
+}
+
+async function callCursorChatStoreStatus(
+    client: ApiMachineClient,
+    machineId: string,
+    params: { workspacePath: string; cursorSessionId: string; homeDir?: string }
+): Promise<unknown> {
+    const manager = (client as unknown as { rpcHandlerManager: { handleRequest: (req: { method: string; params: string }) => Promise<string> } }).rpcHandlerManager
+    const raw = await manager.handleRequest({
+        method: `${machineId}:cursor-chat-store-status`,
+        params: JSON.stringify(params)
     })
     return JSON.parse(raw) as unknown
 }
@@ -77,12 +121,71 @@ function writeCodexTranscript(codexHome: string, fileName: string, payload: Reco
     return file
 }
 
+describe('ApiMachineClient cursor-chat-store-status handler', () => {
+    beforeEach(() => {
+        inspectCursorChatStoreMock.mockReset()
+        inspectCursorChatStoreMock.mockResolvedValue({ onDisk: false, store: null })
+    })
+
+    it('inspects stores under the recorded session owner home', async () => {
+        const machine = makeMachine('cursor-store-machine')
+        const client = new ApiMachineClient('cli-token', machine)
+
+        try {
+            await callCursorChatStoreStatus(client, machine.id, {
+                workspacePath: '/work/project',
+                cursorSessionId: 'cursor-session',
+                homeDir: '  /home/recorded-owner  '
+            })
+
+            expect(inspectCursorChatStoreMock).toHaveBeenCalledWith({
+                home: '/home/recorded-owner',
+                workspacePath: '/work/project',
+                cursorSessionId: 'cursor-session'
+            })
+        } finally {
+            client.shutdown()
+        }
+    })
+
+    it('falls back to the CLI process home for old or whitespace-only homeDir metadata', async () => {
+        const machine = makeMachine('cursor-store-fallback-machine')
+        const client = new ApiMachineClient('cli-token', machine)
+
+        try {
+            await callCursorChatStoreStatus(client, machine.id, {
+                workspacePath: '/work/project',
+                cursorSessionId: 'cursor-session-old'
+            })
+            await callCursorChatStoreStatus(client, machine.id, {
+                workspacePath: '/work/project',
+                cursorSessionId: 'cursor-session-empty',
+                homeDir: '   '
+            })
+
+            expect(inspectCursorChatStoreMock).toHaveBeenNthCalledWith(1, {
+                home: homedir(),
+                workspacePath: '/work/project',
+                cursorSessionId: 'cursor-session-old'
+            })
+            expect(inspectCursorChatStoreMock).toHaveBeenNthCalledWith(2, {
+                home: homedir(),
+                workspacePath: '/work/project',
+                cursorSessionId: 'cursor-session-empty'
+            })
+        } finally {
+            client.shutdown()
+        }
+    })
+})
+
 describe('ApiMachineClient listOpencodeModelsForCwd handler', () => {
     let workspaceRoot: string
 
     beforeEach(() => {
         ioMock.mockReset()
         listOpencodeModelsForCwdMock.mockReset()
+        listGrokModelsForCwdMock.mockReset()
         workspaceRoot = mkdtempSync(join(tmpdir(), 'hapi-machine-ws-'))
     })
 
@@ -166,7 +269,7 @@ describe('ApiMachineClient listOpencodeModelsForCwd handler', () => {
             })
             // The handler realpaths the cwd (security: prevents symlink escape),
             // so on macOS /var/folders/... resolves to /private/var/folders/...
-            expect(listOpencodeModelsForCwdMock).toHaveBeenCalledWith(realpathSync(secondWorkspaceRoot))
+            expect(listOpencodeModelsForCwdMock).toHaveBeenCalledWith(realpathSync.native(secondWorkspaceRoot))
         } finally {
             rmSync(secondWorkspaceRoot, { recursive: true, force: true })
             client.shutdown()
@@ -174,6 +277,57 @@ describe('ApiMachineClient listOpencodeModelsForCwd handler', () => {
     })
 })
 
+describe('ApiMachineClient listGrokModelsForCwd handler', () => {
+    let workspaceRoot: string
+
+    beforeEach(() => {
+        ioMock.mockReset()
+        listGrokModelsForCwdMock.mockReset()
+        workspaceRoot = mkdtempSync(join(tmpdir(), 'hapi-grok-machine-ws-'))
+    })
+
+    afterEach(() => {
+        rmSync(workspaceRoot, { recursive: true, force: true })
+    })
+
+    it('rejects cwd outside workspace roots before running grok models', async () => {
+        const machine = makeMachine('grok-machine-1')
+        const client = new ApiMachineClient('cli-token', machine, [workspaceRoot])
+        const outsideCwd = mkdtempSync(join(tmpdir(), 'hapi-grok-outside-'))
+
+        try {
+            expect(await callListGrokModels(client, machine.id, outsideCwd)).toEqual({
+                success: false,
+                error: 'Path is outside workspace roots'
+            })
+            expect(listGrokModelsForCwdMock).not.toHaveBeenCalled()
+        } finally {
+            rmSync(outsideCwd, { recursive: true, force: true })
+            client.shutdown()
+        }
+    })
+
+    it('forwards a workspace cwd to the Grok model probe', async () => {
+        const machine = makeMachine('grok-machine-2')
+        const client = new ApiMachineClient('cli-token', machine, [workspaceRoot])
+        listGrokModelsForCwdMock.mockResolvedValueOnce({
+            success: true,
+            availableModels: [{ modelId: 'grok-4.5' }],
+            currentModelId: 'grok-4.5'
+        })
+
+        try {
+            expect(await callListGrokModels(client, machine.id, workspaceRoot)).toEqual({
+                success: true,
+                availableModels: [{ modelId: 'grok-4.5' }],
+                currentModelId: 'grok-4.5'
+            })
+            expect(listGrokModelsForCwdMock).toHaveBeenCalledWith(realpathSync.native(workspaceRoot))
+        } finally {
+            client.shutdown()
+        }
+    })
+})
 
 describe('ApiMachineClient Codex transcript handlers', () => {
     const originalCodexHome = process.env.CODEX_HOME
@@ -266,7 +420,6 @@ describe('ApiMachineClient Codex transcript handlers', () => {
         } finally {
             client.shutdown()
         }
-
     })
 })
 

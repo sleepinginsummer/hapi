@@ -62,7 +62,7 @@ export function useSkills(
         enabled,
         staleTime: Infinity,
         gcTime: 30 * 60 * 1000,
-        // 新会话刚创建时 CLI 的 RPC handler 可能尚未注册，短暂重试直到首次成功。
+        // 新会话刚创建时 CLI RPC handler 可能尚未注册，需要在首次成功前短暂重试。
         retry: (failureCount) => shouldRetrySkillsQuery(failureCount),
         refetchInterval: (query) => getSkillsRefetchInterval(
             enabled,
