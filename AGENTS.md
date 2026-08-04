@@ -117,6 +117,67 @@ Before commit/push/PR: use the **`pre-push-review`** skill (`~/.cursor/skills/pr
 2. **Logic:** skim `git diff origin/main...HEAD`; apply `.github/prompts/codex-pr-review.md` as a local Major checklist (no Codex required)
 3. **Style:** optional
 
+## Fork 发版与部署
+
+当前 fork 的代码仓库、GitHub 账号和 npm 包不是同一个标识，发版时必须分别确认：
+
+- 源码仓库：`sleepinginsummer/hapi`
+- fork 远程：`sleepinginsummer`
+- 上游远程：`origin`，指向 `tiann/hapi`，不能把它当成 fork 发布源
+- 当前代码里的 npm 包名：`@twsxtd/hapi` 及 `@twsxtd/hapi-*` 平台包；它不是 `sleepinginsummer` npm 包
+
+### 标准流程
+
+1. 在干净工作树上完成检查：
+
+   ```bash
+   bun typecheck
+   bun run test
+   ```
+
+2. 将目标提交推送到 fork 的 `main`：
+
+   ```bash
+   git push sleepinginsummer HEAD:main
+   ```
+
+   `main` push 只触发测试和按条件触发 Web 部署，不会自动发布 CLI 二进制或 npm 包。
+
+3. 创建 fork release tag，触发 `.github/workflows/fork-release.yml`：
+
+   ```bash
+   git tag fork-v<版本号>
+   git push sleepinginsummer fork-v<版本号>
+   ```
+
+   例如当前版本线使用 `fork-v0.23.1.1`。tag 必须匹配 `fork-v*`。
+
+4. 等待对应的 GitHub Action 完成。该 workflow 会构建 Linux x64、macOS ARM64、Windows x64 等平台产物，并创建 GitHub Release，上传平台 npm tarball 和 `checksums.txt`。
+
+5. 线上更新必须使用 `sleepinginsummer/hapi` 这次 Release 的产物并校验 checksum，不能仅凭版本号执行 `npm install @twsxtd/hapi@<版本>`。npm registry 中同名版本可能来自上游发布，包的 `repository` 元数据也可能仍指向 `tiann/hapi`。
+
+   服务器当前由 `hapi-hub.service` 管理，入口为 `/usr/local/bin/hapi hub --no-relay`。更新顺序：先替换并检查二进制，再重启服务，最后确认 `systemctl is-active hapi-hub.service` 和公网 HTTP 返回正常。
+
+   本机 runner 更新后执行：
+
+   ```bash
+   export HAPI_API_URL="https://hapi.znzme.com"
+   export CLI_API_TOKEN="<本机实际 token>"
+   hapi doctor clean
+   hapi runner stop
+   hapi runner start --workspace-root /Volumes/syy2t/project --workspace-root /Users/syy/Desktop/mac-project
+   ```
+
+6. 目前 `fork-release.yml` 只创建 GitHub Release，不执行 `npm publish`。如果要发布 npm 包，必须另行确认 npm scope、版本号和发布凭据，并同步修改包名、平台依赖和发布 workflow；不能把 GitHub 仓库名自动当作 npm 包名。
+
+### 发布后核验
+
+- `git show <tag>^{commit}` 指向预期提交
+- GitHub Release 的平台文件和 `checksums.txt` 存在
+- 服务器 `hapi --version`、Hub 服务状态和公网 HTTP 均正常
+- 本机 runner 使用两个 workspace 启动并能连接 Hub
+- 未使用 `origin` 的上游 Release 或未经核验的同名 npm 包
+
 ## Testing
 
 - Test framework: Vitest (via `bun run test`)
